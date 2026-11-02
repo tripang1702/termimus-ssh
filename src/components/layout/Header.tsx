@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Home,
   PanelRightClose,
@@ -27,7 +28,7 @@ import { useSnippetStore } from "../../stores/useSnippetStore";
 import { useSyncStore } from "../../stores/useSyncStore";
 import { useHostStore } from "../../stores/useHostStore";
 import { useVaultStore } from "../../stores/useVaultStore";
-import { getAllSessionIdsInTree, getAllLeafPanes } from "../../lib/layoutTree";
+import { getAllSessionIdsInTree, getAllLeafPanes, findPaneById } from "../../lib/layoutTree";
 import { QuickConnectModal } from "./QuickConnectModal";
 import { ActiveTab } from "./Sidebar";
 
@@ -71,12 +72,14 @@ export function Header({
     isDraggingTab,
     draggedTabId,
     reorderGroups,
+    activePaneId,
     broadcastGroupIds,
   } = useSessionStore(
     useShallow((s) => ({
       tabs: s.tabs,
       groups: s.groups,
       activeGroupId: s.activeGroupId,
+      activePaneId: s.activePaneId,
       setActiveGroup: s.setActiveGroup,
       closeGroup: s.closeGroup,
       startDragTab: s.startDragTab,
@@ -87,6 +90,7 @@ export function Header({
     }))
   );
 
+  const { t } = useTranslation();
   const isSnippetSidebarOpen = useSnippetStore((s) => s.isSidebarOpen);
   const toggleSnippetSidebar = useSnippetStore((s) => s.toggleSidebar);
   const isVaultInitialized = useVaultStore((s) => s.isInitialized);
@@ -131,14 +135,30 @@ export function Header({
     ? groups.find((g) => g.id === tabContextMenu.groupId)
     : null;
 
+  const targetLeaf = targetGroup
+    ? (activeGroupId === targetGroup.id && activePaneId
+        ? findPaneById(targetGroup.rootPane, activePaneId)
+        : null) || getAllLeafPanes(targetGroup.rootPane)[0]
+    : null;
+
   const targetPrimaryTab = targetGroup
     ? getAllSessionIdsInTree(targetGroup.rootPane)
         .map((id) => tabs.find((t) => t.id === id))
         .find(Boolean)
     : null;
 
-  const targetHost = targetPrimaryTab
-    ? useHostStore.getState().hosts.find((h) => h.id === targetPrimaryTab.hostId)
+  const targetTab = (targetLeaf?.activeTabId
+    ? tabs.find((t) => t.id === targetLeaf.activeTabId)
+    : null) || targetPrimaryTab;
+
+  const isTargetLocal = Boolean(
+    targetTab?.isLocal ||
+    targetTab?.hostId === "local" ||
+    targetTab?.id.startsWith("local-")
+  );
+
+  const targetHost = targetTab && !isTargetLocal
+    ? useHostStore.getState().hosts.find((h) => h.id === targetTab.hostId)
     : null;
 
   const isTargetBroadcast = targetGroup
@@ -146,6 +166,12 @@ export function Header({
     : false;
 
   const handleDuplicateTab = async () => {
+    if (isTargetLocal) {
+      await useSessionStore.getState().openLocalSession(true);
+      onSelectTab?.();
+      setTabContextMenu(null);
+      return;
+    }
     if (!targetHost) return;
     await useSessionStore.getState().openSession(targetHost, true);
     onSelectTab?.();
@@ -153,23 +179,33 @@ export function Header({
   };
 
   const handleSplitRightTab = () => {
-    if (!targetHost || !targetGroup) return;
+    if (!targetGroup) return;
     setActiveGroup(targetGroup.id);
     onSelectTab?.();
     const leaves = getAllLeafPanes(targetGroup.rootPane);
-    if (leaves[0]) {
-      useSessionStore.getState().openSessionInSplit(targetHost, leaves[0].id, "row", "second");
+    const targetPane = targetLeaf || leaves[0];
+    if (!targetPane) return;
+
+    if (isTargetLocal) {
+      useSessionStore.getState().openLocalSessionInSplit(targetPane.id, "row", "second");
+    } else if (targetHost) {
+      useSessionStore.getState().openSessionInSplit(targetHost, targetPane.id, "row", "second");
     }
     setTabContextMenu(null);
   };
 
   const handleSplitDownTab = () => {
-    if (!targetHost || !targetGroup) return;
+    if (!targetGroup) return;
     setActiveGroup(targetGroup.id);
     onSelectTab?.();
     const leaves = getAllLeafPanes(targetGroup.rootPane);
-    if (leaves[0]) {
-      useSessionStore.getState().openSessionInSplit(targetHost, leaves[0].id, "column", "second");
+    const targetPane = targetLeaf || leaves[0];
+    if (!targetPane) return;
+
+    if (isTargetLocal) {
+      useSessionStore.getState().openLocalSessionInSplit(targetPane.id, "column", "second");
+    } else if (targetHost) {
+      useSessionStore.getState().openSessionInSplit(targetHost, targetPane.id, "column", "second");
     }
     setTabContextMenu(null);
   };
@@ -366,7 +402,7 @@ export function Header({
             data-tauri-drag-region="false"
             onClick={onGoHome}
             onContextMenu={(e) => e.stopPropagation()}
-            title="Home / Hosts (Alt+H)"
+            title={t("nav.homeTitle")}
             className={`group relative flex h-7.5 items-center gap-1.5 rounded-lg px-2.5 text-xs shrink-0 cursor-pointer transition-all select-none ${
               isHomeActive
                 ? "bg-[var(--surface-container)] text-[var(--text-primary)] border border-[var(--border)] shadow-xs font-semibold"
@@ -381,7 +417,7 @@ export function Header({
                   : "text-[var(--text-muted)] group-hover:text-[var(--text-primary)]"
               }`}
             />
-            <span>Home</span>
+            <span>{t("nav.home")}</span>
           </button>
 
           {groups.map((group) => {
@@ -402,7 +438,9 @@ export function Header({
             // If the group has a workspace label, use it; otherwise fall back to
             // the primary host name, with a count suffix when split into multiple panes.
             const displayLabel = group.label
-              ? group.label
+              ? count > 1 && !group.label.includes(`(${count})`)
+                ? `${group.label} (${count})`
+                : group.label
               : count > 1
               ? `${primaryTab.hostLabel} (${count})`
               : primaryTab.hostLabel;
@@ -530,8 +568,8 @@ export function Header({
             onClick={toggleSnippetSidebar}
             title={
               isSnippetSidebarOpen
-                ? "Collapse snippets sidebar (Alt+S)"
-                : "Expand snippets sidebar (Alt+S)"
+                ? t("nav.snippetsToggleCollapse")
+                : t("nav.snippetsToggleExpand")
             }
             className={`flex h-7 items-center gap-1.5 rounded-md px-2 mr-1 text-[11px] font-mono transition-colors ${
               isSnippetSidebarOpen
@@ -540,7 +578,7 @@ export function Header({
             }`}
           >
             <Braces size={13} className={isSnippetSidebarOpen ? "text-[var(--primary)]" : ""} />
-            <span className="hidden sm:inline">Snippets</span>
+            <span className="hidden sm:inline">{t("nav.snippets")}</span>
             {isSnippetSidebarOpen ? (
               <PanelRightClose size={13} className="opacity-70" />
             ) : (
@@ -557,21 +595,21 @@ export function Header({
           <div data-tauri-drag-region="false" className="flex h-full items-stretch shrink-0">
             <button
               onClick={handleMinimize}
-              title="Minimize"
+              title={t("nav.minimize")}
               className="flex w-11 items-center justify-center text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
             >
               <Minus size={14} />
             </button>
             <button
               onClick={handleToggleMaximize}
-              title={isMaximized ? "Restore" : "Maximize (F11 for Full Screen)"}
+              title={isMaximized ? t("nav.restore") : t("nav.maximize")}
               className="flex w-11 items-center justify-center text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] transition-colors"
             >
               {isMaximized ? <Copy size={12} /> : <Square size={12} />}
             </button>
             <button
               onClick={handleClose}
-              title="Close"
+              title={t("nav.close")}
               className="flex w-11 items-center justify-center text-[var(--text-muted)] hover:bg-[var(--danger)] hover:text-white transition-colors"
             >
               <X size={15} />
@@ -596,7 +634,7 @@ export function Header({
               >
                 <div className="flex items-center gap-2">
                   <CopyPlus size={13} />
-                  <span>Duplicate Tab</span>
+                  <span>{t("nav.duplicateTab")}</span>
                 </div>
               </button>
 
@@ -607,7 +645,7 @@ export function Header({
               >
                 <div className="flex items-center gap-2">
                   <Columns2 size={13} />
-                  <span>Split Screen (Right)</span>
+                  <span>{t("nav.splitRight")}</span>
                 </div>
               </button>
 
@@ -618,7 +656,7 @@ export function Header({
               >
                 <div className="flex items-center gap-2">
                   <Rows2 size={13} />
-                  <span>Split Screen (Down)</span>
+                  <span>{t("nav.splitDown")}</span>
                 </div>
               </button>
 
@@ -629,7 +667,7 @@ export function Header({
               >
                 <div className="flex items-center gap-2">
                   <Radio size={13} className={isTargetBroadcast ? "animate-pulse" : ""} />
-                  <span>{isTargetBroadcast ? "Disconnect Input Sync" : "Sync All Panes"}</span>
+                  <span>{isTargetBroadcast ? t("terminal.toggleSyncInput") : t("nav.syncInput")}</span>
                 </div>
                 <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
                   Alt+B
@@ -645,7 +683,7 @@ export function Header({
               >
                 <div className="flex items-center gap-2">
                   <X size={13} />
-                  <span>Close Tab</span>
+                  <span>{t("nav.closeTab")}</span>
                 </div>
               </button>
 
@@ -657,7 +695,7 @@ export function Header({
                 >
                   <div className="flex items-center gap-2">
                     <XCircle size={13} />
-                    <span>Close Other Tabs</span>
+                    <span>{t("nav.closeOtherTabs")}</span>
                   </div>
                 </button>
               )}
@@ -670,7 +708,7 @@ export function Header({
                 >
                   <div className="flex items-center gap-2">
                     <ArrowRightToLine size={13} />
-                    <span>Close Tabs to the Right</span>
+                    <span>{t("nav.closeTabsToRight")}</span>
                   </div>
                 </button>
               )}
@@ -689,7 +727,7 @@ export function Header({
           >
             <div className="flex items-center gap-2">
               <Plus size={13} />
-              <span>New Connection</span>
+              <span>{t("nav.quickConnect")}</span>
             </div>
             <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
               {isMac ? "⌘K" : "Ctrl+K"}
@@ -704,7 +742,7 @@ export function Header({
             >
               <div className="flex items-center gap-2">
                 <XCircle size={13} />
-                <span>Close All Tabs</span>
+                <span>{t("nav.closeOtherTabs")}</span>
               </div>
             </button>
           )}

@@ -4,6 +4,7 @@ import { FitAddon } from "@xterm/addon-fit";
 import { SearchAddon } from "@xterm/addon-search";
 import { listen } from "@tauri-apps/api/event";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { useTranslation } from "react-i18next";
 import {
   Copy,
   Clipboard,
@@ -352,6 +353,7 @@ export function disposeTerminalSession(sessionId: string) {
 }
 
 export function XtermView({ sessionId, hostId, visible, isFocused = true }: XtermViewProps) {
+  const { t } = useTranslation();
   const themeId = useTerminalThemeStore((s) => s.themeId);
   const currentTheme = getTerminalTheme(themeId);
   const themeBg = currentTheme.xterm.background ?? "#0a0e14";
@@ -426,7 +428,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
   }, [contextMenu]);
 
   const handleSplitRight = () => {
-    const { rootPane, splitPane, openSessionInSplit } = useSessionStore.getState();
+    const { rootPane, splitPane, openSessionInSplit, openLocalSessionInSplit } = useSessionStore.getState();
     if (!rootPane) return;
     const pane = findPaneContainingTab(rootPane, sessionId);
     if (!pane) return;
@@ -434,6 +436,10 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
     const otherTabId = pane.tabIds.find((id) => id !== pane.activeTabId);
     if (otherTabId) {
       splitPane(pane.id, otherTabId, "row", "second");
+      return;
+    }
+    if (isLocal) {
+      openLocalSessionInSplit(pane.id, "row", "second");
       return;
     }
     const hosts = useHostStore.getState().hosts;
@@ -444,7 +450,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
   };
 
   const handleSplitDown = () => {
-    const { rootPane, splitPane, openSessionInSplit } = useSessionStore.getState();
+    const { rootPane, splitPane, openSessionInSplit, openLocalSessionInSplit } = useSessionStore.getState();
     if (!rootPane) return;
     const pane = findPaneContainingTab(rootPane, sessionId);
     if (!pane) return;
@@ -452,6 +458,10 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
     const otherTabId = pane.tabIds.find((id) => id !== pane.activeTabId);
     if (otherTabId) {
       splitPane(pane.id, otherTabId, "column", "second");
+      return;
+    }
+    if (isLocal) {
+      openLocalSessionInSplit(pane.id, "column", "second");
       return;
     }
     const hosts = useHostStore.getState().hosts;
@@ -590,6 +600,18 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
       searchAddonRef.current = searchAddon;
 
       term.open(domWrapper);
+
+      // Ensure xterm recalculates metrics once custom webfonts finish loading
+      if (typeof document !== "undefined" && document.fonts?.ready) {
+        document.fonts.ready.then(() => {
+          try {
+            fitAddon.fit();
+            term.refresh(0, term.rows - 1);
+          } catch {
+            // ignore
+          }
+        });
+      }
 
       // Capture-phase paste handler to ensure DOM paste events are forwarded to xterm
       domWrapper.addEventListener(
@@ -896,11 +918,11 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
               setContextMenu(null);
             }}
             disabled={!contextMenu.hasSelection}
-            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors disabled:opacity-40 disabled:pointer-events-none group"
+            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors disabled:opacity-40 disabled:pointer-events-none group cursor-pointer"
           >
             <div className="flex items-center gap-2">
               <Copy size={13} />
-              <span>Copy</span>
+              <span>{t("terminal.contextMenu.copy")}</span>
             </div>
             <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
               {isMac ? "⌘C" : "Ctrl+Shift+C"}
@@ -913,11 +935,11 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
               if (termRef.current) safePasteToTerminal(termRef.current);
               setContextMenu(null);
             }}
-            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
           >
             <div className="flex items-center gap-2">
               <Clipboard size={13} />
-              <span>Paste</span>
+              <span>{t("terminal.contextMenu.paste")}</span>
             </div>
             <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
               {isMac ? "⌘V" : "Ctrl+Shift+V"}
@@ -930,11 +952,11 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
               termRef.current?.selectAll();
               setContextMenu(null);
             }}
-            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
           >
             <div className="flex items-center gap-2">
               <CheckSquare size={13} />
-              <span>Select All</span>
+              <span>{t("terminal.contextMenu.selectAll")}</span>
             </div>
             <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
               {isMac ? "⌘A" : "Ctrl+Shift+A"}
@@ -949,11 +971,11 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
               setIsSearchOpen(true);
               setContextMenu(null);
             }}
-            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
           >
             <div className="flex items-center gap-2">
               <Search size={13} />
-              <span>Find in Terminal</span>
+              <span>{t("terminal.contextMenu.find")}</span>
             </div>
             <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
               {isMac ? "⌘F" : "Ctrl+F"}
@@ -966,11 +988,11 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
               termRef.current?.clear();
               setContextMenu(null);
             }}
-            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
           >
             <div className="flex items-center gap-2">
               <Trash2 size={13} />
-              <span>Clear Buffer</span>
+              <span>{t("terminal.contextMenu.clearBuffer")}</span>
             </div>
             <span className="text-[10px] font-mono text-[var(--text-muted)] group-hover:text-black/70">
               {isMac ? "⌘K" : "Ctrl+Shift+K"}
@@ -979,7 +1001,7 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
 
           {/* Font Size Zoom Controls */}
           <div className="flex items-center justify-between px-2.5 py-1 text-[11px] text-[var(--text-muted)] font-mono">
-            <span>Font Size</span>
+            <span>{t("terminal.contextMenu.fontSize")}</span>
             <div className="flex items-center gap-1">
               <button
                 onClick={() => {
@@ -987,8 +1009,8 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
                     adjustTerminalFontSize(termRef.current, fitAddonRef.current, sessionId, -1);
                   }
                 }}
-                title={`Zoom Out (${isMac ? "⌘-" : "Ctrl+-"})`}
-                className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
+                title={`${t("terminal.contextMenu.zoomOut")} (${isMac ? "⌘-" : "Ctrl+-"})`}
+                className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] cursor-pointer"
               >
                 <ZoomOut size={12} />
               </button>
@@ -998,10 +1020,10 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
                     adjustTerminalFontSize(termRef.current, fitAddonRef.current, sessionId, "reset");
                   }
                 }}
-                title={`Reset Zoom (${isMac ? "⌘0" : "Ctrl+0"})`}
-                className="rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
+                title={`${t("terminal.contextMenu.resetZoom")} (${isMac ? "⌘0" : "Ctrl+0"})`}
+                className="rounded px-1.5 py-0.5 text-[10px] text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] cursor-pointer"
               >
-                Reset
+                {t("terminal.contextMenu.resetZoom")}
               </button>
               <button
                 onClick={() => {
@@ -1009,8 +1031,8 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
                     adjustTerminalFontSize(termRef.current, fitAddonRef.current, sessionId, 1);
                   }
                 }}
-                title={`Zoom In (${isMac ? "⌘+" : "Ctrl++"})`}
-                className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)]"
+                title={`${t("terminal.contextMenu.zoomIn")} (${isMac ? "⌘+" : "Ctrl++"})`}
+                className="rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-container)] hover:text-[var(--text-primary)] cursor-pointer"
               >
                 <ZoomIn size={12} />
               </button>
@@ -1025,11 +1047,11 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
               handleSplitRight();
               setContextMenu(null);
             }}
-            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
           >
             <div className="flex items-center gap-2">
               <Columns2 size={13} />
-              <span>Split Right</span>
+              <span>{t("terminal.splitRight")}</span>
             </div>
           </button>
 
@@ -1039,11 +1061,11 @@ export function XtermView({ sessionId, hostId, visible, isFocused = true }: Xter
               handleSplitDown();
               setContextMenu(null);
             }}
-            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group"
+            className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 hover:bg-[var(--primary)] hover:text-black transition-colors group cursor-pointer"
           >
             <div className="flex items-center gap-2">
               <Rows2 size={13} />
-              <span>Split Down</span>
+              <span>{t("terminal.splitDown")}</span>
             </div>
           </button>
 
