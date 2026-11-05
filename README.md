@@ -81,9 +81,17 @@ Prebuilt installers for every release are published automatically to the **[GitH
 - **Instant Script Runner**: Store frequently used shell scripts, deployment commands, and system diagnostics.
 - **Active Tab Injection**: Send snippets straight into your running terminal session with a single click.
 
+### 🤖 AI Terminal Copilot (Bring Your Own Key)
+- **Bring Your Own Provider**: Connect any OpenAI-compatible API, Anthropic, or a local **Ollama** model (auto-lists installed models). Manage multiple providers and switch the active one from **Settings → AI Copilot**.
+- **Natural Language → Shell Command**: Describe what you want in the Copilot side panel (`Alt+I` / `⌘I`) and get a ready-to-run command with an explanation, tailored to the session's real OS, shell, and package manager (auto-detected over a hidden exec channel, so nothing appears in your terminal).
+- **Inline `#` Prompts**: Type `# find log files larger than 100MB` at the shell prompt and press `Alt+I`. The line is replaced with the generated command. It is only typed, never executed: you review it and press Enter.
+- **Explain Errors**: Send recent terminal output to the Copilot to get a plain-language explanation of what went wrong and how to fix it.
+- **Risk-Aware Execution**: Every command gets a risk level. A local classifier can only *raise* the model's self-reported risk, never lower it. Destructive commands, and changes on hosts marked as production, require explicit confirmation. AI commands are never sent to a broadcast group.
+- **Privacy First**: Private keys, tokens, passwords, and `Authorization` headers are redacted from terminal output before it leaves your machine. API keys are encrypted in the vault (AES-256-GCM) like every other credential, and provider configs are included in encrypted backups.
+
 ### 🌐 Multi-Language Support (i18n)
 - **Complete Localization**: Full UI internationalization covering all features, toolbars, tables, modals, and settings.
-- **Available Languages**: English (`en`) and Bahasa Indonesia (`id`), with English set as default.
+- **Available Languages**: English (`en`), Bahasa Indonesia (`id`), and Chinese (Simplified, `zh`), with English set as default.
 - **Instant 1-Click Switching**: Switch languages in real-time from **Settings → General** without restarting the application or terminating active SSH sessions.
 - **Persistent Preferences**: Language preference is securely preserved across app launches.
 
@@ -228,6 +236,7 @@ Termimus enforces defense-in-depth principles:
 | **Memory Hygiene** | Zeroization | Derived keys stored in memory are zeroized on vault lock using `zeroize`. |
 | **OS Keyring** | System Keyring | Derived key is securely delegated to KWallet, GNOME Secret Service, macOS Keychain, or Windows Credential Manager. |
 | **Blind Sync** | E2EE Envelope | Server accepts only version 2 encrypted bundles; zero plaintext leakage. |
+| **AI Copilot Privacy** | Redaction + Vault | Private keys, tokens, and passwords are stripped from terminal context before it reaches the AI provider; provider API keys are stored as AES-256-GCM vault credentials. |
 
 ---
 
@@ -248,7 +257,7 @@ termimus/
 │   │   ├── sync/                 # Self-hosted cloud sync manager
 │   │   ├── vault/                # Backup & restore components
 │   │   └── settings/             # Tabbed settings suite (full-width)
-│   ├── i18n/                     # Modular type-safe dictionaries (en, id)
+│   ├── i18n/                     # Modular type-safe dictionaries (en, id, zh)
 │   ├── stores/                   # Zustand domain stores
 │   └── lib/                      # Tauri typed invoke wrappers
 │
